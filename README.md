@@ -58,22 +58,23 @@ pip install -r requirements.txt
 
 ---
 
-### 🔄 Sincronização Automática com o GitHub (`sync_git.ps1`)
+### 🔄 Sincronização com o GitHub (`pull.ps1` e `push.ps1`)
 
-Para facilitar o envio e receção de alterações sem ter de memorizar comandos git, incluímos o script `sync_git.ps1`:
+Para facilitar o envio e receção de alterações sem ter de memorizar comandos git, incluímos scripts simples em PowerShell:
 
-- No PowerShell ou no Terminal do PyCharm:
-  ```powershell
-  .\sync_git.ps1
-  ```
-  *(Ou passando uma mensagem de commit: `.\sync_git.ps1 "Mensagem do commit"`)*
+#### 1. Ir buscar e descarregar novidades do GitHub (Download / Pull):
+Para atualizar a tua pasta local com o que estiver de mais recente no GitHub:
+```powershell
+.\pull.ps1
+```
+*(Executa `git fetch origin` e `git pull origin main`)*.
 
-O script faz automaticamente:
-1. `git fetch origin` (verifica o que há de novo no GitHub)
-2. `git pull origin main --rebase` (atualiza o teu repositório local)
-3. `git add .` (prepara ficheiros locais modificados ou novos)
-4. `git commit -m "..."` (cria o commit com timestamp ou mensagem)
-5. `git push origin main` (envia as alterações para o repositório `TSGouveia/Behavior`)
+#### 2. Enviar alterações para o GitHub (Upload / Push):
+Para guardar e enviar os teus novos ficheiros ou alterações locais para o repositório:
+```powershell
+.\push.ps1
+```
+*(Podes também passar uma mensagem: `.\push.ps1 "Mensagem do commit"`)*.
 
 ---
 

@@ -104,12 +104,12 @@ def process_video(video_path: Path):
 
 def main():
     import argparse
+    global DIRECTORY
     parser = argparse.ArgumentParser(description="Parallel frame extraction using ffmpeg")
     parser.add_argument("--dir", "-d", default=str(DIRECTORY), help="Directory containing .h264 videos (default: script directory)")
     args = parser.parse_args()
 
     target_dir = Path(args.dir).resolve()
-    global DIRECTORY
     DIRECTORY = target_dir
 
     video_files = sorted(list(target_dir.glob("*.h264")))

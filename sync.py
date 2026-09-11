@@ -1,6 +1,6 @@
 """
-Script utilitario em Python para sincronizar/descarregar alteracoes do GitHub (TSGouveia/Behavior).
-Forca o alinhamento com a versao mais recente do GitHub (git fetch origin + git reset --hard origin/main).
+Python utility script to sync and download changes from GitHub (TSGouveia/Behavior).
+Forces local repository alignment with the latest GitHub main branch (git fetch origin + git reset --hard origin/main).
 """
 
 import subprocess
@@ -21,7 +21,7 @@ def run_cmd(cmd):
             print(e.stderr.strip(), file=sys.stderr)
         return False
     except FileNotFoundError:
-        print("Erro: Git nao foi encontrado no PATH. Instala o Git para continuar.", file=sys.stderr)
+        print("Error: Git was not found in PATH. Please install Git to continue.", file=sys.stderr)
         return False
 
 
@@ -31,20 +31,20 @@ def main():
     print("   Force Sync Git (Download) - TSGouveia/Behavior  ")
     print("=" * 55)
 
-    print("\n[1/2] A ir buscar o estado mais recente do GitHub (git fetch origin)...")
+    print("\n[1/2] Fetching the latest updates from GitHub (git fetch origin)...")
     fetch_ok = run_cmd(["git", "-C", str(repo_root), "fetch", "origin"])
 
     if not fetch_ok:
-        print("\n[ERRO] Nao foi possivel ligar ao GitHub para verificar novidades.")
+        print("\n[ERROR] Unable to connect to GitHub to check for updates.")
         sys.exit(1)
 
-    print("\n[2/2] A forcar sincronizacao para coincidir com o GitHub (git reset --hard origin/main)...")
+    print("\n[2/2] Forcing local repository to match GitHub (git reset --hard origin/main)...")
     reset_ok = run_cmd(["git", "-C", str(repo_root), "reset", "--hard", "origin/main"])
 
     if reset_ok:
-        print("\n[OK] Repositorio local forcado e 100% atualizado com o GitHub!")
+        print("\n[OK] Local repository successfully synchronized and up to date with GitHub!")
     else:
-        print("\n[AVISO] Ocorreu um problema ao forcar a atualizacao dos ficheiros.")
+        print("\n[WARNING] An issue occurred while updating files.")
         sys.exit(1)
 
 

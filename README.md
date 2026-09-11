@@ -58,23 +58,13 @@ pip install -r requirements.txt
 
 ---
 
-### 🔄 Sincronização com o GitHub (`pull.ps1` e `push.ps1`)
+### 🔄 Sincronização / Download do GitHub (`sync.ps1`)
 
-Para facilitar o envio e receção de alterações sem ter de memorizar comandos git, incluímos scripts simples em PowerShell:
-
-#### 1. Ir buscar e descarregar novidades do GitHub (Download / Pull):
-Para atualizar a tua pasta local com o que estiver de mais recente no GitHub:
+Para ir buscar e descarregar as novidades e atualizações mais recentes do GitHub para a tua máquina local:
 ```powershell
-.\pull.ps1
+.\sync.ps1
 ```
-*(Executa `git fetch origin` e `git pull origin main`)*.
-
-#### 2. Enviar alterações para o GitHub (Upload / Push):
-Para guardar e enviar os teus novos ficheiros ou alterações locais para o repositório:
-```powershell
-.\push.ps1
-```
-*(Podes também passar uma mensagem: `.\push.ps1 "Mensagem do commit"`)*.
+*(Executa automaticamente `git fetch origin` e `git pull origin main`)*.
 
 ---
 

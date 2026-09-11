@@ -54,17 +54,24 @@ def parse_filename_metadata(file_path):
     }
 
     # Inspect parent directories up the tree to detect genotype and cohort subfolders:
-    # e.g. data/csvs/<genotype>/<cohort>/<file>.csv or data/csvs/<genotype>/<file>.csv
+    # Hierarchy: data/csvs/<genotype>/<cohort>/<file>.csv or data/csvs/<genotype>/<file>.csv
+    # When folder structure exists under csvs/data, genotype is ALWAYS the genotype folder,
+    # and cohort is the cohort subfolder (e.g. N1, N2, N3).
     folder_cohort = None
     folder_genotype = None
 
-    for p_name in [p.name for p in path_obj.parents if p.name and p.name.lower() not in ["csvs", "data", ".", ""]]:
+    # We inspect the parent directories in bottom-up order (immediate parent first)
+    non_root_parents = [
+        p.name for p in path_obj.parents
+        if p.name and p.name.lower() not in ["csvs", "data", ".", ""]
+    ]
+    for p_name in non_root_parents:
         if re.match(r"^N\d+$", p_name, re.IGNORECASE) and not folder_cohort:
             folder_cohort = p_name.upper()
         elif not folder_genotype:
             folder_genotype = p_name
 
-    # Check filename cohort prefix if present (e.g. N1_, N2_, N3_)
+    # Check filename cohort prefix as fallback only if no folder cohort was found
     m_cohort = re.match(r"^(N\d+)_(.*)$", stem, re.IGNORECASE)
     if m_cohort:
         file_cohort = m_cohort.group(1).upper()
@@ -82,6 +89,8 @@ def parse_filename_metadata(file_path):
         meta["stage"] = m.group(2)
         meta["condition"] = m.group(3)
         meta["replicate"] = m.group(4)
+        if folder_genotype:
+            meta["genotype"] = folder_genotype
         return meta
 
     # Pattern: Genotype_Replicate (e.g., Hid_1, Empty_2)
@@ -89,6 +98,8 @@ def parse_filename_metadata(file_path):
     if m2:
         meta["genotype"] = folder_genotype or m2.group(1)
         meta["replicate"] = m2.group(2)
+        if folder_genotype:
+            meta["genotype"] = folder_genotype
         return meta
 
     # Fallback: split on underscores and dashes
@@ -299,7 +310,10 @@ def load_and_clean(csv_path, fps=30, max_gap_frames=5, max_local_deviation_mm=No
     df.attrs["arena_center_mm"] = arena_center_mm
     df.attrs["arena_radius_mm"] = arena_radius_mm
     df.attrs["file_path"] = str(csv_path)
-    df.attrs["metadata"] = parse_filename_metadata(csv_path)
+    meta = parse_filename_metadata(csv_path)
+    df.attrs["metadata"] = meta
+    df.attrs["genotype"] = meta.get("genotype", "Unknown")
+    df.attrs["cohort"] = meta.get("cohort", "All")
 
     if arena_center_mm is not None:
         cx, cy = arena_center_mm

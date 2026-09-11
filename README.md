@@ -85,7 +85,7 @@ Behavior/
 │   └── results/                       # Tabelas e gráficos consolidados de saída
 │       ├── larva_batch_summary.csv
 │       ├── larva_batch_summary.xlsx
-│       └── all_larvae_trajectory_overlay.png
+│       └── <Genotipo>_<Cohort>_larvae_trajectory_overlay.png
 ├── python/
 │   ├── larva_analysis.py              # Módulo com a física, limpeza, cinemática e QC
 │   └── larva_crawling_analysis.ipynb  # Notebook Jupyter interativo para análise visual e em lote
@@ -154,5 +154,4 @@ python python/larva_analysis.py --folder data/csvs --summary-out data/results/la
 ## 📊 Ficheiros de Saída (`data/results/`)
 
 - **`larva_batch_summary.csv` / `.xlsx`**: Tabela com todas as métricas por larva (distância total percorrida, velocidade média e mediana, tempo sem deteção, etc.).
-- **`<Genotipo>_<Cohort>_larvae_trajectory_overlay.png`**: Sobreposição das trajetórias de cada coorte de um genótipo centradas na arena.
-- **`all_larvae_trajectory_overlay.png`**: Sobreposição geral com todas as larvas do lote.
+- **`<Genotipo>_<Cohort>_larvae_trajectory_overlay.png`**: Sobreposição das trajetórias de cada coorte (NX) de um genótipo centradas na arena.

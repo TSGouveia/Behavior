@@ -75,12 +75,17 @@ Os ficheiros de dados estão organizados por **genótipo** para permitir anális
 ```text
 Behavior/
 ├── data/
-│   ├── csvs/                          # Ficheiros CSV de coordenadas divididos por genótipo
+│   ├── csvs/                          # Ficheiros CSV de coordenadas divididos por genótipo e coorte
 │   │   ├── nSybxRalRNAi/              # Pasta com o nome do genótipo
-│   │   │   ├── N1_..._L1_FA.csv
-│   │   │   ├── N2_..._L1_FA.csv
-│   │   │   └── N3_..._L1_FA.csv
-│   │   └── OutroGenotipo/             # Podes adicionar novos genótipos em novas pastas
+│   │   │   ├── N1/                    # Subpasta da coorte N1
+│   │   │   │   ├── *_L1_FA.csv
+│   │   │   │   └── ...
+│   │   │   ├── N2/                    # Subpasta da coorte N2
+│   │   │   │   └── ...
+│   │   │   └── N3/                    # Subpasta da coorte N3
+│   │   │       └── ...
+│   │   └── OutroGenotipo/             # Podes adicionar novos genótipos com as suas subpastas N1, N2...
+│   │       ├── N1/
 │   │       └── ...
 │   └── results/                       # Tabelas e gráficos consolidados de saída
 │       ├── larva_batch_summary.csv
@@ -97,7 +102,7 @@ Behavior/
 ```
 
 > [!NOTE]
-> **Organização por Genótipo**: Dentro de `data/csvs/`, cria uma pasta para cada genótipo (por exemplo `data/csvs/Controlo/`, `data/csvs/Mutante/`). O código deteta automaticamente o genótipo com base no nome da pasta e gera gráficos de linhas separados por genótipo, agrupando as coortes `N1`, `N2`, `N3` de cada um!
+> **Organização por Pastas (Genótipo → NX)**: Os nomes dos ficheiros CSV já não precisam de seguir convenções rígidas! Basta colocar os CSVs dentro de `data/csvs/<Genotipo>/<NX>/` (ex: `data/csvs/nSybxRalRNAi/N1/`, `data/csvs/nSybxRalRNAi/N2/`, `data/csvs/nSybxRalRNAi/N3/`). O pipeline deteta automaticamente o genótipo e a coorte com base na hierarquia de pastas e agrupa todos os gráficos e resumos de forma automática.
 
 ---
 
@@ -121,7 +126,7 @@ python videos/extract_parallel.py --dir /caminho/para/os/videos
    - Delimitação da arena circular (ROI).
    - Escala de píxeis para milímetros (usando a régua da placa).
    - Delinear uma larva para definir o tamanho esperado.
-5. Guarda o ficheiro CSV resultante dentro da subpasta do respetivo genótipo em `data/csvs/<NomeDoGenotipo>/`.
+5. Guarda o ficheiro CSV resultante dentro da subpasta da respetiva coorte em `data/csvs/<NomeDoGenotipo>/<NX>/` (ex: `data/csvs/nSybxRalRNAi/N1/`).
 
 ---
 

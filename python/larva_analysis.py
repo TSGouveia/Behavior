@@ -53,17 +53,27 @@ def parse_filename_metadata(file_path):
         "replicate": "",
     }
 
-    # If the file is inside a genotype subfolder (e.g. data/csvs/<genotype>/...), prioritize folder name
-    parent_name = path_obj.parent.name
-    folder_genotype = parent_name if parent_name and parent_name.lower() not in ["csvs", "data", ".", ""] else None
+    # Inspect parent directories up the tree to detect genotype and cohort subfolders:
+    # e.g. data/csvs/<genotype>/<cohort>/<file>.csv or data/csvs/<genotype>/<file>.csv
+    folder_cohort = None
+    folder_genotype = None
 
-    # Extract cohort prefix if present (e.g. N1_, N2_, N3_)
-    m_cohort = re.match(r"^(N\d+)_(.*)$", stem)
+    for p_name in [p.name for p in path_obj.parents if p.name and p.name.lower() not in ["csvs", "data", ".", ""]]:
+        if re.match(r"^N\d+$", p_name, re.IGNORECASE) and not folder_cohort:
+            folder_cohort = p_name.upper()
+        elif not folder_genotype:
+            folder_genotype = p_name
+
+    # Check filename cohort prefix if present (e.g. N1_, N2_, N3_)
+    m_cohort = re.match(r"^(N\d+)_(.*)$", stem, re.IGNORECASE)
     if m_cohort:
-        meta["cohort"] = m_cohort.group(1)
+        file_cohort = m_cohort.group(1).upper()
         base_stem = m_cohort.group(2)
     else:
+        file_cohort = ""
         base_stem = stem
+
+    meta["cohort"] = folder_cohort or file_cohort or "All"
 
     # Pattern: Genotype_Stage_Condition-Replicate or Genotype_Stage_Condition_Replicate
     m = re.match(r"^([^_]+)_([^_]+)_([^-_\s]+)[-_](\d+.*)$", base_stem)

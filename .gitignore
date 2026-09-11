@@ -1,2 +1,4 @@
 /videos_Behavior
 *.png
+__pycache__/
+*.zip

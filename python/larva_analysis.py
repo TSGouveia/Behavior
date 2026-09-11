@@ -42,7 +42,8 @@ def parse_filename_metadata(file_path):
         Genotype: RalG0501, Stage: L2, Condition: FA, Replicate: 0001
     Also handles {Genotype}_{Replicate} (e.g. Hid_1) or other underscore/dash separated formats.
     """
-    stem = Path(file_path).stem
+    path_obj = Path(file_path)
+    stem = path_obj.stem
     meta = {
         "stem": stem,
         "cohort": "",
@@ -51,6 +52,10 @@ def parse_filename_metadata(file_path):
         "condition": "",
         "replicate": "",
     }
+
+    # If the file is inside a genotype subfolder (e.g. data/csvs/<genotype>/...), prioritize folder name
+    parent_name = path_obj.parent.name
+    folder_genotype = parent_name if parent_name and parent_name.lower() not in ["csvs", "data", ".", ""] else None
 
     # Extract cohort prefix if present (e.g. N1_, N2_, N3_)
     m_cohort = re.match(r"^(N\d+)_(.*)$", stem)
@@ -63,7 +68,7 @@ def parse_filename_metadata(file_path):
     # Pattern: Genotype_Stage_Condition-Replicate or Genotype_Stage_Condition_Replicate
     m = re.match(r"^([^_]+)_([^_]+)_([^-_\s]+)[-_](\d+.*)$", base_stem)
     if m:
-        meta["genotype"] = m.group(1)
+        meta["genotype"] = folder_genotype or m.group(1)
         meta["stage"] = m.group(2)
         meta["condition"] = m.group(3)
         meta["replicate"] = m.group(4)
@@ -72,7 +77,7 @@ def parse_filename_metadata(file_path):
     # Pattern: Genotype_Replicate (e.g., Hid_1, Empty_2)
     m2 = re.match(r"^([^_]+)_(\d+.*)$", base_stem)
     if m2:
-        meta["genotype"] = m2.group(1)
+        meta["genotype"] = folder_genotype or m2.group(1)
         meta["replicate"] = m2.group(2)
         return meta
 
@@ -86,6 +91,10 @@ def parse_filename_metadata(file_path):
         meta["condition"] = parts[2]
     if len(parts) >= 4:
         meta["replicate"] = parts[3]
+
+    if folder_genotype:
+        meta["genotype"] = folder_genotype
+
     return meta
 
 

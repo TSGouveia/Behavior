@@ -58,13 +58,13 @@ pip install -r requirements.txt
 
 ---
 
-### 🔄 Sincronização / Download do GitHub (`sync.ps1`)
+### 🔄 Sincronização / Download do GitHub (`sync.py`)
 
-Para ir buscar e descarregar as novidades e atualizações mais recentes do GitHub para a tua máquina local:
-```powershell
-.\sync.ps1
+Para ir buscar e descarregar as novidades e atualizações mais recentes do repositório para a tua máquina local:
+```bash
+python sync.py
 ```
-*(Executa automaticamente `git fetch origin` e `git pull origin main`)*.
+*(Executa automaticamente `git fetch origin` e `git pull origin main`, funcionando em Windows, Mac e Linux)*.
 
 ---
 

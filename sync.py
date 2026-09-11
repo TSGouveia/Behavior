@@ -1,6 +1,6 @@
 """
 Script utilitario em Python para sincronizar/descarregar alteracoes do GitHub (TSGouveia/Behavior).
-Executa git fetch origin e git pull origin main.
+Forca o alinhamento com a versao mais recente do GitHub (git fetch origin + git reset --hard origin/main).
 """
 
 import subprocess
@@ -27,24 +27,24 @@ def run_cmd(cmd):
 
 def main():
     repo_root = Path(__file__).resolve().parent
-    print("=" * 45)
-    print("   Sync Git (Download) - TSGouveia/Behavior  ")
-    print("=" * 45)
+    print("=" * 55)
+    print("   Force Sync Git (Download) - TSGouveia/Behavior  ")
+    print("=" * 55)
 
-    print("\n[1/2] A verificar novidades no GitHub (git fetch origin)...")
+    print("\n[1/2] A ir buscar o estado mais recente do GitHub (git fetch origin)...")
     fetch_ok = run_cmd(["git", "-C", str(repo_root), "fetch", "origin"])
 
     if not fetch_ok:
         print("\n[ERRO] Nao foi possivel ligar ao GitHub para verificar novidades.")
         sys.exit(1)
 
-    print("\n[2/2] A descarregar alteracoes (git pull origin main)...")
-    pull_ok = run_cmd(["git", "-C", str(repo_root), "pull", "origin", "main"])
+    print("\n[2/2] A forcar sincronizacao para coincidir com o GitHub (git reset --hard origin/main)...")
+    reset_ok = run_cmd(["git", "-C", str(repo_root), "reset", "--hard", "origin/main"])
 
-    if pull_ok:
-        print("\n[OK] Repositorio local atualizado com sucesso a partir do GitHub!")
+    if reset_ok:
+        print("\n[OK] Repositorio local forcado e 100% atualizado com o GitHub!")
     else:
-        print("\n[AVISO] Ocorreu um problema ao atualizar os ficheiros.")
+        print("\n[AVISO] Ocorreu um problema ao forcar a atualizacao dos ficheiros.")
         sys.exit(1)
 
 

@@ -64,7 +64,7 @@ Para ir buscar e descarregar as novidades e atualizações mais recentes do repo
 ```bash
 python sync.py
 ```
-*(Executa automaticamente `git fetch origin` e `git pull origin main`, funcionando em Windows, Mac e Linux)*.
+*(Executa automaticamente `git fetch origin` e força a atualização com `git reset --hard origin/main`, garantindo sincronização total sem conflitos, funcionando em Windows, Mac e Linux)*.
 
 ---
 

@@ -58,6 +58,25 @@ pip install -r requirements.txt
 
 ---
 
+### 🔄 Sincronização Automática com o GitHub (`sync_git.ps1`)
+
+Para facilitar o envio e receção de alterações sem ter de memorizar comandos git, incluímos o script `sync_git.ps1`:
+
+- No PowerShell ou no Terminal do PyCharm:
+  ```powershell
+  .\sync_git.ps1
+  ```
+  *(Ou passando uma mensagem de commit: `.\sync_git.ps1 "Mensagem do commit"`)*
+
+O script faz automaticamente:
+1. `git fetch origin` (verifica o que há de novo no GitHub)
+2. `git pull origin main --rebase` (atualiza o teu repositório local)
+3. `git add .` (prepara ficheiros locais modificados ou novos)
+4. `git commit -m "..."` (cria o commit com timestamp ou mensagem)
+5. `git push origin main` (envia as alterações para o repositório `TSGouveia/Behavior`)
+
+---
+
 ## 📁 Estrutura do Projeto
 
 Os ficheiros de dados estão organizados por **genótipo** para permitir análises comparativas automáticas:

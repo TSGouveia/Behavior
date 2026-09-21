@@ -46,16 +46,17 @@ plt.rcParams.update({
     "savefig.transparent": True,
 })
 
-# Custom Purple-to-Orange colormap
+# Custom Purple-to-Orange-to-Yellow colormap (smooth scientific gradient)
 PURPLE_ORANGE_CMAP = LinearSegmentedColormap.from_list(
     "purple_orange",
-    ["#6D28D9", "#8B5CF6", "#C084FC", "#FB923C", "#F97316", "#EA580C"],
+    ["#5B21B6", "#7C3AED", "#A855F7", "#E11D48", "#F97316", "#F59E0B", "#FBBF24", "#FDE047"],
     N=256,
 )
 try:
     import matplotlib as mpl
-    if "purple_orange" not in mpl.colormaps:
-        mpl.colormaps.register(PURPLE_ORANGE_CMAP, name="purple_orange")
+    if "purple_orange" in mpl.colormaps:
+        mpl.colormaps.unregister("purple_orange")
+    mpl.colormaps.register(PURPLE_ORANGE_CMAP, name="purple_orange")
 except Exception:
     pass
 
@@ -1277,6 +1278,11 @@ def plot_superplot(
                     print(f"4. Replicate-Level Test (N={len(meds1)} vs {len(meds2)} replicate medians):")
                     print(f"   • t-test p-value = {p_rep:.4f}")
                 print(f"==========================================================================\n")
+    elif show_stat_test and len(genotypes) == 2 and sp_stats is None:
+        if print_stat_report:
+            print("[STATISTICS WARNING] scipy is not installed in this Python environment!")
+            print("To enable automatic statistical tests (Student's t-test, Welch, Mann-Whitney U, Shapiro-Wilk):")
+            print("Run in terminal / command prompt:  pip install scipy\n")
 
     # Legend placed OUTSIDE the plot area (top right outside) so it never covers points or brackets
     handles = []
@@ -1579,6 +1585,9 @@ def plot_average_speed_over_time(
             print("    (e.g., non-overlapping +/- 1 SEM bands frequently reflect p < 0.05 in parametric tests).")
             print(f"  - Currently plotted shaded band: +/- {error_key.upper()}.")
             print("=" * 72)
+    elif print_stat_report and len(genotypes) == 2 and sp_stats is None:
+        print("[STATISTICS WARNING] scipy is not installed in this Python environment!")
+        print("To enable automatic statistical tests for speed over time: run 'pip install scipy'\n")
 
     if created_fig:
         plt.tight_layout()

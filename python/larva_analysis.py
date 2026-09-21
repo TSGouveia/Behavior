@@ -35,6 +35,16 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
 
+# Enforce clean white theme with transparent background for saved figures
+plt.style.use("seaborn-v0_8-white" if "seaborn-v0_8-white" in plt.style.available else "default")
+plt.rcParams.update({
+    "figure.facecolor": "none",
+    "axes.facecolor": "none",
+    "savefig.facecolor": "none",
+    "savefig.edgecolor": "none",
+    "savefig.transparent": True,
+})
+
 
 def parse_filename_metadata(file_path):
     """
@@ -613,7 +623,7 @@ def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, cl
     ax.invert_yaxis()  # image coordinates: Y increases downward
 
     if save_path:
-        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight", transparent=True)
     return fig, ax
 
 
@@ -744,7 +754,7 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
     plt.tight_layout()
 
     if save_path:
-        fig.savefig(save_path, dpi=300, bbox_inches="tight")
+        fig.savefig(save_path, dpi=300, bbox_inches="tight", transparent=True)
     return fig, ax
 
 
@@ -1301,7 +1311,7 @@ def plot_superplot(
     if created_fig:
         plt.tight_layout()
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            plt.savefig(save_path, dpi=300, bbox_inches="tight", transparent=True)
             print(f"Saved plot: {save_path}")
         return fig, ax
     return ax
@@ -1558,7 +1568,7 @@ def plot_average_speed_over_time(
     if created_fig:
         plt.tight_layout()
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches="tight")
+            plt.savefig(save_path, dpi=300, bbox_inches="tight", transparent=True)
             print(f"Saved plot: {save_path}")
         return fig, ax
     return ax

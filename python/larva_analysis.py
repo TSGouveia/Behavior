@@ -1023,7 +1023,9 @@ def plot_superplot(
 
     all_reps = sorted(sub_df[replicate_col].dropna().astype(str).unique())
 
-    default_colors = ["#2563EB", "#D97706", "#059669", "#7C3AED", "#DB2777", "#0D9488"]
+    # Distinct palette: Purple, Orange, Green (Purple & Orange if 2 items)
+    # Accessible, publication-grade hex codes
+    default_colors = ["#8B5CF6", "#F97316", "#10B981", "#6366F1", "#EC4899", "#14B8A6"]
     if palette is None:
         palette = {rep: default_colors[i % len(default_colors)] for i, rep in enumerate(all_reps)}
 
@@ -1407,9 +1409,9 @@ def plot_average_speed_over_time(
         .reset_index()
     )
 
-    # Color palette
+    # Color palette: Purple, Orange, Green (Purple & Orange if 2 items)
     if palette is None:
-        default_colors = ["#2563EB", "#DC2626", "#059669", "#7C3AED", "#D97706", "#DB2777"]
+        default_colors = ["#8B5CF6", "#F97316", "#10B981", "#6366F1", "#EC4899", "#14B8A6"]
         palette = {g: default_colors[i % len(default_colors)] for i, g in enumerate(genotypes)}
 
     created_fig = False

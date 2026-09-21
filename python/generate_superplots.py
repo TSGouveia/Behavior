@@ -46,7 +46,7 @@ def get_or_create_summary(csv_root, cache_file=None):
 
 def run_all_analyses():
     """Main routine to analyze dataset and produce all requested SuperPlots."""
-    base_dir = Path("D:/Larvas/behavior")
+    base_dir = Path(__file__).resolve().parent.parent
     csv_dir = base_dir / "data" / "csvs"
     results_dir = base_dir / "data" / "results"
     results_dir.mkdir(parents=True, exist_ok=True)

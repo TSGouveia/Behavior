@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
+from matplotlib.colors import LinearSegmentedColormap
 
 # Enforce clean white theme with transparent background for saved figures
 plt.style.use("seaborn-v0_8-white" if "seaborn-v0_8-white" in plt.style.available else "default")
@@ -44,6 +45,20 @@ plt.rcParams.update({
     "savefig.edgecolor": "none",
     "savefig.transparent": True,
 })
+
+# Custom Purple-to-Orange colormap
+PURPLE_ORANGE_CMAP = LinearSegmentedColormap.from_list(
+    "purple_orange",
+    ["#6D28D9", "#8B5CF6", "#C084FC", "#FB923C", "#F97316", "#EA580C"],
+    N=256,
+)
+try:
+    import matplotlib as mpl
+    if "purple_orange" not in mpl.colormaps:
+        mpl.colormaps.register(PURPLE_ORANGE_CMAP, name="purple_orange")
+except Exception:
+    pass
+
 
 
 def parse_filename_metadata(file_path):
@@ -555,7 +570,7 @@ def summarize_by_epoch(df, epoch_s=10):
 
 
 def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, clim=None,
-                    show_larva_max_indicator=True, save_path=None):
+                    show_larva_max_indicator=True, cmap="purple_orange", save_path=None):
     """
     Plot the trajectory, colored by time. Long-gap stretches are simply
     not drawn (rather than connected), so you can visually see where and
@@ -576,7 +591,7 @@ def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, cl
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
     valid_seg = ~(np.isnan(x[:-1]) | np.isnan(x[1:]))
 
-    lc = LineCollection(segments[valid_seg], cmap="viridis")
+    lc = LineCollection(segments[valid_seg], cmap=cmap)
     lc.set_array(t[:-1][valid_seg])
     if clim is not None:
         vmin, vmax = float(round(clim[0])), float(round(clim[1]))
@@ -628,7 +643,7 @@ def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, cl
 
 
 def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Clean",
-                             palette_name="viridis", arena_radius_mm=None,
+                             palette_name="purple_orange", arena_radius_mm=None,
                              trajectory_alpha=0.8, start_alpha=0.9, end_alpha=0.6,
                              start_marker_size=10, end_marker_size=8,
                              arena_color="black", arena_linewidth=2.5,

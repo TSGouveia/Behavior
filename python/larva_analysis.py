@@ -42,33 +42,68 @@ def parse_filename_metadata(file_path):
         Genotype: RalG0501, Stage: L2, Condition: FA, Replicate: 0001
     Also handles {Genotype}_{Replicate} (e.g. Hid_1) or other underscore/dash separated formats.
     """
-    stem = Path(file_path).stem
+    path_obj = Path(file_path)
+    stem = path_obj.stem
     meta = {
         "stem": stem,
+        "cohort": "",
         "genotype": stem,
         "stage": "",
         "condition": "",
         "replicate": "",
     }
 
+    # Inspect parent directories up the tree to detect genotype and cohort subfolders:
+    # Hierarchy: data/csvs/<genotype>/<cohort>/<file>.csv or data/csvs/<genotype>/<file>.csv
+    # When folder structure exists under csvs/data, genotype is ALWAYS the genotype folder,
+    # and cohort is the cohort subfolder (e.g. N1, N2, N3).
+    folder_cohort = None
+    folder_genotype = None
+
+    # We inspect the parent directories in bottom-up order (immediate parent first)
+    non_root_parents = [
+        p.name for p in path_obj.parents
+        if p.name and p.name.lower() not in ["csvs", "data", ".", ""]
+    ]
+    for p_name in non_root_parents:
+        if re.match(r"^N\d+$", p_name, re.IGNORECASE) and not folder_cohort:
+            folder_cohort = p_name.upper()
+        elif not folder_genotype:
+            folder_genotype = p_name
+
+    # Check filename cohort prefix as fallback only if no folder cohort was found
+    m_cohort = re.match(r"^(N\d+)_(.*)$", stem, re.IGNORECASE)
+    if m_cohort:
+        file_cohort = m_cohort.group(1).upper()
+        base_stem = m_cohort.group(2)
+    else:
+        file_cohort = ""
+        base_stem = stem
+
+    meta["cohort"] = folder_cohort or file_cohort or "All"
+
     # Pattern: Genotype_Stage_Condition-Replicate or Genotype_Stage_Condition_Replicate
-    m = re.match(r"^([^_]+)_([^_]+)_([^-_\s]+)[-_](\d+.*)$", stem)
+    m = re.match(r"^([^_]+)_([^_]+)_([^-_\s]+)[-_](\d+.*)$", base_stem)
     if m:
-        meta["genotype"] = m.group(1)
+        meta["genotype"] = folder_genotype or m.group(1)
         meta["stage"] = m.group(2)
         meta["condition"] = m.group(3)
         meta["replicate"] = m.group(4)
+        if folder_genotype:
+            meta["genotype"] = folder_genotype
         return meta
 
     # Pattern: Genotype_Replicate (e.g., Hid_1, Empty_2)
-    m2 = re.match(r"^([^_]+)_(\d+.*)$", stem)
+    m2 = re.match(r"^([^_]+)_(\d+.*)$", base_stem)
     if m2:
-        meta["genotype"] = m2.group(1)
+        meta["genotype"] = folder_genotype or m2.group(1)
         meta["replicate"] = m2.group(2)
+        if folder_genotype:
+            meta["genotype"] = folder_genotype
         return meta
 
     # Fallback: split on underscores and dashes
-    parts = re.split(r"[_\-]+", stem)
+    parts = re.split(r"[_\-]+", base_stem)
     if len(parts) >= 1:
         meta["genotype"] = parts[0]
     if len(parts) >= 2:
@@ -77,12 +112,18 @@ def parse_filename_metadata(file_path):
         meta["condition"] = parts[2]
     if len(parts) >= 4:
         meta["replicate"] = parts[3]
+
+    if folder_genotype:
+        meta["genotype"] = folder_genotype
+
     return meta
 
 
-def _classify_and_interpolate(x, y, invalid_mask, max_gap_frames):
+def _classify_and_interpolate(x, y, invalid_mask, max_gap_frames, max_bridge_dist_mm=1.0):
     """Shared logic: split `invalid_mask` runs into short (interpolate)
-    vs long (leave as a real break), applied to the given x/y series."""
+    vs long (leave as a real break), applied to the given x/y series.
+    If max_bridge_dist_mm is provided, long gaps whose spatial endpoint distance is
+    very small (<= max_bridge_dist_mm) are bridged (joined) via interpolation."""
     gap_id = (invalid_mask != invalid_mask.shift()).cumsum()
     gap_sizes = invalid_mask.groupby(gap_id).transform("sum")
     short_gap = invalid_mask & (gap_sizes <= max_gap_frames)
@@ -96,6 +137,28 @@ def _classify_and_interpolate(x, y, invalid_mask, max_gap_frames):
     y_out = y_out.interpolate(limit_area="inside")
     x_out[long_gap] = np.nan
     y_out[long_gap] = np.nan
+
+    # Bridge discontinuities that are very small in spatial distance
+    if max_bridge_dist_mm is not None and max_bridge_dist_mm > 0 and long_gap.any():
+        for gid, is_lg in long_gap.groupby(gap_id).first().items():
+            if is_lg:
+                sub_idx = long_gap[gap_id == gid].index
+                s_i = sub_idx[0] - 1
+                e_i = sub_idx[-1] + 1
+                if s_i >= 0 and e_i < len(x):
+                    # Check spatial distance between valid endpoints
+                    p_s = (x.loc[s_i], y.loc[s_i])
+                    p_e = (x.loc[e_i], y.loc[e_i])
+                    if pd.notna(p_s[0]) and pd.notna(p_e[0]):
+                        dist = np.sqrt((p_e[0] - p_s[0])**2 + (p_e[1] - p_s[1])**2)
+                        if dist <= max_bridge_dist_mm:
+                            x_span = np.linspace(p_s[0], p_e[0], len(sub_idx) + 2)[1:-1]
+                            y_span = np.linspace(p_s[1], p_e[1], len(sub_idx) + 2)[1:-1]
+                            x_out.loc[sub_idx] = x_span
+                            y_out.loc[sub_idx] = y_span
+                            short_gap.loc[sub_idx] = True
+                            long_gap.loc[sub_idx] = False
+
     return x_out, y_out, short_gap, long_gap
 
 
@@ -175,10 +238,13 @@ def estimate_noise_scale(x, y, max_gap_frames=5, local_window=11):
 def load_and_clean(csv_path, fps=30, max_gap_frames=5, max_local_deviation_mm=None,
                     deviation_multiplier=8.0, min_deviation_floor_mm=0.3, local_window=11,
                     arena_center_mm=None, arena_radius_mm=None, arena_margin_fraction=None,
-                    max_teleport_speed_mm_s=8.0, max_teleport_jump_mm=10.0):
+                    max_teleport_speed_mm_s=8.0, max_teleport_jump_mm=10.0,
+                    max_bridge_dist_mm=1.0):
     """
     Load a tracking CSV and prepare it for analysis.
     (docstring mantida, arena_margin_fraction revertido para None por defeito)
+    max_bridge_dist_mm: if > 0, long gaps with very small spatial distance (<= max_bridge_dist_mm)
+    are bridged (joined) via interpolation rather than left as broken trajectories.
     """
     df = pd.read_csv(csv_path)
     df = df.sort_values("Frame").reset_index(drop=True)
@@ -200,13 +266,13 @@ def load_and_clean(csv_path, fps=30, max_gap_frames=5, max_local_deviation_mm=No
     if max_local_deviation_mm is None:
         max_local_deviation_mm = max(min_deviation_floor_mm, deviation_multiplier * noise_scale_mm)
 
-    x_pass1, y_pass1, _, _ = _classify_and_interpolate(x_raw, y_raw, not_detected | is_teleport, max_gap_frames)
+    x_pass1, y_pass1, _, _ = _classify_and_interpolate(x_raw, y_raw, not_detected | is_teleport, max_gap_frames, max_bridge_dist_mm=None)
 
     local_dev = _local_deviation(x_pass1, y_pass1, local_window)
     is_outlier = (local_dev > max_local_deviation_mm).fillna(False)
 
     invalid = not_detected | is_outlier | is_teleport
-    x_clean, y_clean, short_gap, long_gap = _classify_and_interpolate(x_raw, y_raw, invalid, max_gap_frames)
+    x_clean, y_clean, short_gap, long_gap = _classify_and_interpolate(x_raw, y_raw, invalid, max_gap_frames, max_bridge_dist_mm=max_bridge_dist_mm)
 
     df["X_mm_clean"] = x_clean
     df["Y_mm_clean"] = y_clean
@@ -244,7 +310,10 @@ def load_and_clean(csv_path, fps=30, max_gap_frames=5, max_local_deviation_mm=No
     df.attrs["arena_center_mm"] = arena_center_mm
     df.attrs["arena_radius_mm"] = arena_radius_mm
     df.attrs["file_path"] = str(csv_path)
-    df.attrs["metadata"] = parse_filename_metadata(csv_path)
+    meta = parse_filename_metadata(csv_path)
+    df.attrs["metadata"] = meta
+    df.attrs["genotype"] = meta.get("genotype", "Unknown")
+    df.attrs["cohort"] = meta.get("cohort", "All")
 
     if arena_center_mm is not None:
         cx, cy = arena_center_mm
@@ -355,11 +424,16 @@ def summarize_by_epoch(df, epoch_s=10):
     return df.groupby("epoch")["speed_mm_s"].agg(["max", "mean", "median"]).reset_index()
 
 
-def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, save_path=None):
+def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, clim=None,
+                    show_larva_max_indicator=True, save_path=None):
     """
     Plot the trajectory, colored by time. Long-gap stretches are simply
     not drawn (rather than connected), so you can visually see where and
     for how long tracking was lost.
+    clim: optional tuple (vmin, vmax) for the time colorbar scale, ensuring consistent
+    colors across different videos (e.g. clim=(0, 180)).
+    show_larva_max_indicator: if True, draws a red line on the colorbar indicating the
+    maximum tracked time reached by this specific larva.
     """
     fig, ax = plt.subplots(figsize=(6, 6))
 
@@ -374,9 +448,28 @@ def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, sa
 
     lc = LineCollection(segments[valid_seg], cmap="viridis")
     lc.set_array(t[:-1][valid_seg])
+    if clim is not None:
+        vmin, vmax = float(round(clim[0])), float(round(clim[1]))
+        lc.set_clim(vmin, vmax)
     ax.add_collection(lc)
     cbar = fig.colorbar(lc, ax=ax)
     cbar.set_label("Time (s)")
+
+    # Ensure ticks clearly display the full range, rounded to the nearest integer units
+    if clim is not None:
+        vmin_int, vmax_int = int(round(clim[0])), int(round(clim[1]))
+        tick_step = 30 if vmax_int >= 120 else (20 if vmax_int >= 60 else 10)
+        ticks = list(range(vmin_int, vmax_int, tick_step))
+        if vmax_int not in ticks:
+            ticks.append(vmax_int)
+        cbar.set_ticks(ticks)
+        cbar.set_ticklabels([str(val) for val in ticks])
+
+    # Red indicator line on colorbar for this specific larva's maximum tracked time
+    if show_larva_max_indicator and valid_seg.any():
+        larva_t_max = float(np.nanmax(t[np.concatenate([[valid_seg[0]], valid_seg])]))
+        cbar.ax.axhline(larva_t_max, color="red", linewidth=2.5, linestyle="-", zorder=5)
+        cbar.ax.plot(1.0, larva_t_max, marker="<", color="red", markersize=7, clip_on=False, zorder=6)
 
     if dish_center_mm is None:
         dish_center_mm = df.attrs.get("arena_center_mm")
@@ -409,6 +502,7 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
                              trajectory_alpha=0.8, start_alpha=0.9, end_alpha=0.6,
                              start_marker_size=10, end_marker_size=8,
                              arena_color="black", arena_linewidth=2.5,
+                             flagged=None,
                              save_path=None):
     """
     Reproduce the arena-centered multi-larva overlay plot from Empty_Trajectories / Hid_all_larvae_inferno.png.
@@ -436,6 +530,7 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
     for i, df in enumerate(df_list):
         label = labels[i] if labels and i < len(labels) else df.attrs.get("metadata", {}).get("stem", f"Larva_{i+1}")
         color = colors[i]
+        is_flagged = bool(flagged[i]) if flagged is not None and i < len(flagged) else False
 
         # Extract centered coordinates
         xc = df.get("X_centered_mm")
@@ -466,7 +561,21 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
         valid_seg = ~(np.isnan(x_vals[:-1]) | np.isnan(x_vals[1:]))
 
-        lc = LineCollection(segments[valid_seg], colors=[color], linewidths=2, alpha=trajectory_alpha, label=label)
+        # Flagged larvae use dashed lines and reduced opacity so they are
+        # still visible but clearly distinguished from clean trajectories.
+        lc_linestyle = "--" if is_flagged else "-"
+        lc_linewidth = 1.2 if is_flagged else 2
+        lc_alpha = trajectory_alpha * 0.55 if is_flagged else trajectory_alpha
+        lc_label = f"{label} ⚑" if is_flagged else label
+
+        lc = LineCollection(
+            segments[valid_seg],
+            colors=[color],
+            linewidths=lc_linewidth,
+            linestyle=lc_linestyle,
+            alpha=lc_alpha,
+            label=lc_label,
+        )
         ax.add_collection(lc)
 
         # Plot Start (first valid point) and End (last valid point)
@@ -537,7 +646,8 @@ def list_flagged_events(df):
 
 
 def batch_summarize(csv_paths, fps=30, max_gap_frames=5, deviation_multiplier=8.0,
-                     min_deviation_floor_mm=0.3, max_speed_mm_s=10.0):
+                     min_deviation_floor_mm=0.3, max_speed_mm_s=10.0,
+                     arena_margin_fraction=None, max_bridge_dist_mm=1.0):
     """
     Run the full pipeline over many videos and return one summary table,
     with parsed filename metadata and automatic QC flags.
@@ -547,9 +657,12 @@ def batch_summarize(csv_paths, fps=30, max_gap_frames=5, deviation_multiplier=8.
         meta = parse_filename_metadata(path)
         df = load_and_clean(path, fps=fps, max_gap_frames=max_gap_frames,
                              deviation_multiplier=deviation_multiplier,
-                             min_deviation_floor_mm=min_deviation_floor_mm)
+                             min_deviation_floor_mm=min_deviation_floor_mm,
+                             arena_margin_fraction=arena_margin_fraction,
+                             max_bridge_dist_mm=max_bridge_dist_mm)
         df = compute_kinematics(df, max_speed_mm_s=max_speed_mm_s)
         stats = summarize(df)
+        stats["cohort"] = meta["cohort"]
         stats["genotype"] = meta["genotype"]
         stats["stage"] = meta["stage"]
         stats["condition"] = meta["condition"]
@@ -587,13 +700,19 @@ def flag_outlier_videos(summary_table, mad_multiplier=3.0):
     reasons = pd.Series([""] * len(table), index=table.index)
     flagged = pd.Series([False] * len(table), index=table.index)
 
+    # (col, human label, absolute floor below which we never flag regardless of z-score)
+    # Floors chosen to be biologically / practically meaningful:
+    #   pct_time_untracked  : < 5 % untracked is perfectly acceptable
+    #   n_outliers_rejected : a handful of noisy frames is normal
+    #   n_speed_outliers    : same
+    #   median_speed_mm_s   : < 0.5 mm/s difference from median is noise, not biology
     checks = {
-        "pct_time_untracked": "high untracked %",
-        "n_outliers_rejected": "many outliers rejected",
-        "n_speed_outliers": "many speed outliers (tracking jumps)",
-        "median_speed_mm_s": "unusually fast median speed",
+        "pct_time_untracked":  ("high untracked %",                         5.0),
+        "n_outliers_rejected": ("many outliers rejected",                   10),
+        "n_speed_outliers":    ("many speed outliers (tracking jumps)",     10),
+        "median_speed_mm_s":   ("unusually fast median speed",              0.5),
     }
-    for col, label in checks.items():
+    for col, (label, abs_floor) in checks.items():
         if col not in table.columns or len(table) < 2:
             continue
         med = table[col].median()
@@ -601,7 +720,8 @@ def flag_outlier_videos(summary_table, mad_multiplier=3.0):
         if mad == 0:
             continue
         z = (table[col] - med).abs() / (1.4826 * mad)
-        trigger = z > mad_multiplier
+        # Must be a relative outlier AND exceed the absolute floor
+        trigger = (z > mad_multiplier) & (table[col] > med + abs_floor)
         flagged |= trigger
         reasons[trigger] = reasons[trigger] + label + "; "
 

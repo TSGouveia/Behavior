@@ -52,11 +52,36 @@ PURPLE_ORANGE_CMAP = LinearSegmentedColormap.from_list(
     ["#5B21B6", "#7C3AED", "#A855F7", "#E11D48", "#F97316", "#F59E0B", "#FBBF24", "#FDE047"],
     N=256,
 )
+
+# Custom Green-to-Blue colormap for Control trajectories (rich distinct shades from lime/mint/emerald to teal, cyan, azure, royal blue, indigo)
+GREEN_BLUE_CMAP = LinearSegmentedColormap.from_list(
+    "green_blue",
+    [
+        "#047857",  # Deep emerald
+        "#059669",  # Emerald green
+        "#10B981",  # Vibrant green
+        "#34D399",  # Mint / Light green
+        "#2DD4BF",  # Aqua / Turquoise
+        "#14B8A6",  # Teal
+        "#0891B2",  # Ocean cyan
+        "#0284C7",  # Sky / Azure blue
+        "#2563EB",  # Electric royal blue
+        "#1D4ED8",  # Deep cobalt blue
+        "#4338CA",  # Indigo
+        "#312E81",  # Midnight blue
+    ],
+    N=256,
+)
+
 try:
     import matplotlib as mpl
     if "purple_orange" in mpl.colormaps:
         mpl.colormaps.unregister("purple_orange")
     mpl.colormaps.register(PURPLE_ORANGE_CMAP, name="purple_orange")
+
+    if "green_blue" in mpl.colormaps:
+        mpl.colormaps.unregister("green_blue")
+    mpl.colormaps.register(GREEN_BLUE_CMAP, name="green_blue")
 except Exception:
     pass
 
@@ -665,9 +690,9 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
         print("No DataFrames provided to plot_multi_larva_overlay.")
         return None, None
 
-    # Colors from colormap
+    # Colors from colormap: smooth linear progression across colormap (sem intercalar)
     cmap = plt.get_cmap(palette_name)
-    colors = [cmap(val) for val in np.linspace(0.15, 0.9, n_larvae)] if n_larvae > 1 else [cmap(0.5)]
+    colors = [cmap(val) for val in np.linspace(0.08, 0.92, n_larvae)] if n_larvae > 1 else [cmap(0.5)]
 
     fig, ax = plt.subplots(figsize=(8, 8))
     any_plotted = False
@@ -958,6 +983,7 @@ def discover_comparisons(csv_folder):
 def plot_superplot(
     df,
     genotypes=None,
+    control_genotype=None,
     metric="total_distance_mm",
     ylabel="Total distance (mm)",
     title=None,
@@ -967,6 +993,7 @@ def plot_superplot(
     genotype_col="genotype",
     genotype_labels=None,
     show_stat_test=True,
+    stat_method="auto",
     show_legend=True,
     jitter_amount=0.18,
     individual_size=40,
@@ -1164,125 +1191,227 @@ def plot_superplot(
         ax.set_title(title, fontsize=13, fontweight="bold", pad=12)
 
     # Statistical testing with automated normality & variance evaluation
-    stat_report = None
-    if show_stat_test and len(genotypes) == 2 and sp_stats is not None:
-        g1, g2 = genotypes[0], genotypes[1]
-        all_vals1 = sub_df[sub_df[genotype_col] == g1][metric].dropna().values
-        all_vals2 = sub_df[sub_df[genotype_col] == g2][metric].dropna().values
+    stat_report = []
+    if show_stat_test and sp_stats is not None:
+        # Determine pairwise comparisons
+        comparisons = []
+        if control_genotype is not None and control_genotype in genotypes:
+            ctrl_idx = genotypes.index(control_genotype)
+            for i, g in enumerate(genotypes):
+                if g != control_genotype:
+                    comparisons.append((control_genotype, g, ctrl_idx, i))
+        elif len(genotypes) == 2:
+            comparisons.append((genotypes[0], genotypes[1], 0, 1))
 
-        if len(all_vals1) > 0 and len(all_vals2) > 0:
-            # 1. Normality evaluation (Shapiro-Wilk)
-            sw1 = sp_stats.shapiro(all_vals1)
-            sw2 = sp_stats.shapiro(all_vals2)
-            norm1 = sw1.pvalue >= 0.05
-            norm2 = sw2.pvalue >= 0.05
-            both_normal = norm1 and norm2
+        if comparisons:
+            y_data_max = sub_df[metric].max()
+            y_data_min = sub_df[metric].min()
+            y_span = y_data_max - y_data_min if y_data_max != y_data_min else 1.0
 
-            # 2. Homogeneity of variances (Levene's test)
-            lev = sp_stats.levene(all_vals1, all_vals2)
-            equal_var = lev.pvalue >= 0.05
+            step_height = 0.09 * y_span
+            base_bracket_y = y_data_max + 0.06 * y_span
+            current_bracket_y = base_bracket_y
 
-            # 3. Hypothesis testing
-            if both_normal:
-                if equal_var:
-                    test_name = "Student t-test"
-                    stat_res = sp_stats.ttest_ind(all_vals1, all_vals2, equal_var=True)
+            # Automatically select omnibus ANOVA / Kruskal-Wallis if >2 groups (or if requested)
+            use_omnibus = (len(genotypes) > 2) and (stat_method in ["auto", "omnibus", "kruskal_dunn", "anova_dunnett"])
+
+            # Pre-evaluate normality across all groups to see if parametric ANOVA or Kruskal-Wallis fits
+            group_samples = [sub_df[sub_df[genotype_col] == g][metric].dropna().values for g in genotypes]
+            shapiro_results = {g: sp_stats.shapiro(vals) for g, vals in zip(genotypes, group_samples) if len(vals) >= 3}
+            all_groups_normal = all(res.pvalue >= 0.05 for res in shapiro_results.values())
+
+            # Perform Kruskal-Wallis or ANOVA if requested
+            omnibus_name = None
+            omnibus_stat = None
+            omnibus_p = None
+            dunn_p_values = {}
+
+            if use_omnibus:
+                if stat_method == "anova_dunnett" or (stat_method == "omnibus" and all_groups_normal):
+                    omnibus_name = "One-way ANOVA"
+                    f_val, p_omni = sp_stats.f_oneway(*group_samples)
+                    omnibus_stat, omnibus_p = float(f_val), float(p_omni)
+                    # Dunnett's test if control specified
+                    if control_genotype is not None and hasattr(sp_stats, "dunnett"):
+                        ctrl_vals = sub_df[sub_df[genotype_col] == control_genotype][metric].dropna().values
+                        treat_genos = [g for g in genotypes if g != control_genotype]
+                        treat_vals = [sub_df[sub_df[genotype_col] == g][metric].dropna().values for g in treat_genos]
+                        res_dun = sp_stats.dunnett(*treat_vals, control=ctrl_vals)
+                        for tg, p_dun in zip(treat_genos, res_dun.pvalue):
+                            dunn_p_values[tg] = (float(p_dun), "Dunnett post-hoc")
                 else:
-                    test_name = "Welch t-test"
-                    stat_res = sp_stats.ttest_ind(all_vals1, all_vals2, equal_var=False)
-                p_val = stat_res.pvalue
-                stat_val = stat_res.statistic
-            else:
-                test_name = "Mann-Whitney U"
-                stat_res = sp_stats.mannwhitneyu(all_vals1, all_vals2, alternative="two-sided")
-                p_val = stat_res.pvalue
-                stat_val = stat_res.statistic
+                    omnibus_name = "Kruskal-Wallis"
+                    h_val, p_omni = sp_stats.kruskal(*group_samples)
+                    omnibus_stat, omnibus_p = float(h_val), float(p_omni)
+                    # Dunn post-hoc test with Bonferroni correction against control
+                    comb_metric = sub_df[metric].dropna()
+                    comb_ranks = comb_metric.rank()
+                    sub_with_rank = sub_df.loc[comb_metric.index].copy()
+                    sub_with_rank["_rank"] = comb_ranks
+                    mean_ranks = sub_with_rank.groupby(genotype_col)["_rank"].mean()
+                    N_tot = len(comb_ranks)
 
-            # Replicate-level test (on replicate medians)
-            meds1 = rep_medians_by_geno.get(g1, [])
-            meds2 = rep_medians_by_geno.get(g2, [])
-            if len(meds1) >= 3 and len(meds2) >= 3:
-                t_rep = sp_stats.ttest_ind(meds1, meds2, equal_var=True)
-                p_rep = t_rep.pvalue
-            else:
-                p_rep = None
-
-            # Asterisk assignment
-            if p_val < 0.001:
-                stars = "***"
-            elif p_val < 0.01:
-                stars = "**"
-            elif p_val < 0.05:
-                stars = "*"
-            else:
-                stars = "ns"
-
-            if p_val < 0.001:
-                p_plot_str = f"{test_name}: p < 0.001 ({stars})"
-            elif p_val < 0.05:
-                p_plot_str = f"{test_name}: p = {p_val:.4f} ({stars})"
-            else:
-                p_plot_str = f"{test_name}: p = {p_val:.3f} ({stars})"
-
-            y_max = sub_df[metric].max()
-            y_span = y_max - sub_df[metric].min()
-            if y_span == 0:
-                y_span = 1.0
-            bracket_y = y_max + 0.07 * y_span
-            text_y = bracket_y + 0.02 * y_span
-
-            ax.plot(
-                [0, 0, 1, 1],
-                [bracket_y - 0.02 * y_span, bracket_y, bracket_y, bracket_y - 0.02 * y_span],
-                color="black",
-                linewidth=1.2,
-            )
-            ax.text(0.5, text_y, p_plot_str, ha="center", va="bottom", fontsize=9.5, fontweight="bold")
-            ax.set_ylim(top=bracket_y + 0.16 * y_span)
-
-            stat_report = {
-                "comparison": f"{g1} vs {g2}",
-                "metric": metric,
-                "shapiro_p_g1": sw1.pvalue,
-                "shapiro_p_g2": sw2.pvalue,
-                "is_normal_g1": norm1,
-                "is_normal_g2": norm2,
-                "both_normal": both_normal,
-                "levene_p": lev.pvalue,
-                "equal_variance": equal_var,
-                "test_used": test_name,
-                "statistic": stat_val,
-                "p_value": p_val,
-                "stars": stars,
-                "n_g1": len(all_vals1),
-                "n_g2": len(all_vals2),
-                "p_value_replicate_level": p_rep,
-            }
+                    if control_genotype is not None:
+                        ctrl_rank = mean_ranks[control_genotype]
+                        n_ctrl = len(sub_df[sub_df[genotype_col] == control_genotype][metric].dropna())
+                        treat_genos = [g for g in genotypes if g != control_genotype]
+                        k_treat = len(treat_genos)
+                        for tg in treat_genos:
+                            n_tg = len(sub_df[sub_df[genotype_col] == tg][metric].dropna())
+                            denom = np.sqrt((N_tot * (N_tot + 1) / 12.0) * (1.0 / n_ctrl + 1.0 / n_tg))
+                            z_val = (mean_ranks[tg] - ctrl_rank) / denom if denom > 0 else 0.0
+                            p_raw = 2.0 * (1.0 - sp_stats.norm.cdf(abs(z_val)))
+                            p_adj = min(1.0, p_raw * k_treat)
+                            dunn_p_values[tg] = (float(p_adj), "Dunn post-hoc (Bonferroni)")
 
             if print_stat_report:
-                print(f"==========================================================================")
-                print(f"STATISTICAL & NORMALITY REPORT: {g1} vs {g2} [{ylabel}]")
-                print(f"==========================================================================")
-                print(f"1. Normality Assessment (Shapiro-Wilk test, alpha = 0.05):")
-                print(f"   • {g1} (n={len(all_vals1)}): W = {sw1.statistic:.4f}, p = {sw1.pvalue:.4f} -> {'NORMAL (p >= 0.05)' if norm1 else 'NOT NORMAL (p < 0.05)'}")
-                print(f"   • {g2} (n={len(all_vals2)}): W = {sw2.statistic:.4f}, p = {sw2.pvalue:.4f} -> {'NORMAL (p >= 0.05)' if norm2 else 'NOT NORMAL (p < 0.05)'}")
-                print(f"   • Conclusion: {'Both distributions are normal -> Parametric test valid.' if both_normal else 'At least one distribution is non-normal -> Non-parametric test recommended.'}")
-                print(f"2. Homogeneity of Variances (Levene test):")
-                print(f"   • Stat = {lev.statistic:.4f}, p = {lev.pvalue:.4f} -> {'Equal variances' if equal_var else 'Unequal variances (heteroscedastic)'}")
-                print(f"3. Statistical Test Performed:")
-                print(f"   • Test: {test_name}")
-                print(f"   • Test Statistic = {stat_val:.4f}")
-                print(f"   • P-value = {p_val:.5f} ({stars})")
-                print(f"   • Significance code: *** p < 0.001 | ** p < 0.01 | * p < 0.05 | ns p >= 0.05")
-                if p_rep is not None:
-                    print(f"4. Replicate-Level Test (N={len(meds1)} vs {len(meds2)} replicate medians):")
-                    print(f"   • t-test p-value = {p_rep:.4f}")
-                print(f"==========================================================================\n")
-    elif show_stat_test and len(genotypes) == 2 and sp_stats is None:
+                print(f"\n" + "=" * 78)
+                print(f"STATISTICAL & NORMALITY REPORT: [{ylabel}]")
+                if control_genotype:
+                    print(f"Designated Control: {control_genotype}")
+                if use_omnibus:
+                    print(f"Analysis Type: Non-parametric Omnibus ANOVA ({omnibus_name} + Post-hoc vs Control)")
+                    print(f"  • {omnibus_name} Statistic = {omnibus_stat:.4f}, p-value = {omnibus_p:.5e}")
+                else:
+                    print(f"Analysis Type: Independent Pairwise Comparisons (Student / Welch t-test / Mann-Whitney)")
+                print(f"=" * 78)
+
+            for comp_idx, (g_ctrl, g_exp, idx_ctrl, idx_exp) in enumerate(comparisons):
+                vals_ctrl = sub_df[sub_df[genotype_col] == g_ctrl][metric].dropna().values
+                vals_exp = sub_df[sub_df[genotype_col] == g_exp][metric].dropna().values
+
+                if len(vals_ctrl) < 3 or len(vals_exp) < 3:
+                    continue
+
+                # 1. Normality evaluation (Shapiro-Wilk)
+                sw_ctrl = sp_stats.shapiro(vals_ctrl)
+                sw_exp = sp_stats.shapiro(vals_exp)
+                norm_ctrl = bool(sw_ctrl.pvalue >= 0.05)
+                norm_exp = bool(sw_exp.pvalue >= 0.05)
+                both_normal = norm_ctrl and norm_exp
+
+                # 2. Homogeneity of variances (Levene test)
+                lev = sp_stats.levene(vals_ctrl, vals_exp)
+                equal_var = bool(lev.pvalue >= 0.05)
+
+                # 3. Hypothesis testing
+                if use_omnibus and g_exp in dunn_p_values:
+                    p_val, test_name = dunn_p_values[g_exp]
+                    stat_val = float(omnibus_stat)
+                else:
+                    if both_normal:
+                        if equal_var:
+                            test_name = "Student t-test"
+                            stat_res = sp_stats.ttest_ind(vals_ctrl, vals_exp, equal_var=True)
+                        else:
+                            test_name = "Welch t-test"
+                            stat_res = sp_stats.ttest_ind(vals_ctrl, vals_exp, equal_var=False)
+                    else:
+                        test_name = "Mann-Whitney U"
+                        stat_res = sp_stats.mannwhitneyu(vals_ctrl, vals_exp, alternative="two-sided")
+                    p_val = float(stat_res.pvalue)
+                    stat_val = float(stat_res.statistic)
+
+                # Replicate-level test (on replicate medians)
+                meds1 = rep_medians_by_geno.get(g_ctrl, [])
+                meds2 = rep_medians_by_geno.get(g_exp, [])
+                if len(meds1) >= 3 and len(meds2) >= 3:
+                    t_rep = sp_stats.ttest_ind(meds1, meds2, equal_var=True)
+                    p_rep = float(t_rep.pvalue)
+                else:
+                    p_rep = None
+
+                # Asterisk assignment
+                if p_val < 0.001:
+                    stars = "***"
+                elif p_val < 0.01:
+                    stars = "**"
+                elif p_val < 0.05:
+                    stars = "*"
+                else:
+                    stars = "ns"
+
+                # Draw comparison bracket
+                x_left = min(idx_ctrl, idx_exp)
+                x_right = max(idx_ctrl, idx_exp)
+                tick_h = 0.018 * y_span
+
+                ax.plot(
+                    [x_left, x_left, x_right, x_right],
+                    [current_bracket_y - tick_h, current_bracket_y, current_bracket_y, current_bracket_y - tick_h],
+                    color="black",
+                    linewidth=1.3,
+                )
+
+                if len(comparisons) == 1:
+                    if p_val < 0.001:
+                        p_str = f"{test_name}: p < 0.001 ({stars})"
+                    elif p_val < 0.05:
+                        p_str = f"{test_name}: p = {p_val:.4f} ({stars})"
+                    else:
+                        p_str = f"{test_name}: p = {p_val:.3f} ({stars})"
+                else:
+                    p_str = f"{stars} (p={p_val:.4f})" if p_val >= 0.0001 else f"{stars} (p<0.001)"
+
+                ax.text(
+                    (x_left + x_right) / 2.0,
+                    current_bracket_y + 0.008 * y_span,
+                    p_str,
+                    ha="center",
+                    va="bottom",
+                    fontsize=8.5 if len(comparisons) > 2 else 9.5,
+                    fontweight="bold",
+                )
+
+                current_bracket_y += step_height
+
+                report_entry = {
+                    "control": g_ctrl,
+                    "target": g_exp,
+                    "comparison": f"{g_ctrl} vs {g_exp}",
+                    "metric": metric,
+                    "shapiro_p_control": sw_ctrl.pvalue,
+                    "shapiro_p_target": sw_exp.pvalue,
+                    "is_normal_control": norm_ctrl,
+                    "is_normal_target": norm_exp,
+                    "both_normal": both_normal,
+                    "levene_stat": lev.statistic,
+                    "levene_p": lev.pvalue,
+                    "equal_variance": equal_var,
+                    "test_used": test_name,
+                    "statistic": stat_val,
+                    "p_value": p_val,
+                    "stars": stars,
+                    "n_control": len(vals_ctrl),
+                    "n_target": len(vals_exp),
+                    "p_value_replicate_level": p_rep,
+                    "omnibus_test": omnibus_name,
+                    "omnibus_p": omnibus_p,
+                }
+                stat_report.append(report_entry)
+
+                if print_stat_report:
+                    print(f"--- Comparison: {g_ctrl} vs {g_exp} ---")
+                    print(f"1. Normality Assessment (Shapiro-Wilk, alpha=0.05):")
+                    print(f"   • Control {g_ctrl} (n={len(vals_ctrl)}): W={sw_ctrl.statistic:.4f}, p={sw_ctrl.pvalue:.4f} -> {'NORMAL (p>=0.05)' if norm_ctrl else 'NOT NORMAL (p<0.05)'}")
+                    print(f"   • Group   {g_exp} (n={len(vals_exp)}): W={sw_exp.statistic:.4f}, p={sw_exp.pvalue:.4f} -> {'NORMAL (p>=0.05)' if norm_exp else 'NOT NORMAL (p<0.05)'}")
+                    print(f"   • Both normal: {both_normal}")
+                    print(f"2. Homogeneity of Variances (Levene test):")
+                    print(f"   • Stat = {lev.statistic:.4f}, p = {lev.pvalue:.4f} -> {'Equal variances (p>=0.05)' if equal_var else 'Unequal variances (p<0.05)'}")
+                    print(f"3. Statistical Test Performed:")
+                    print(f"   • Selected Test: {test_name}")
+                    print(f"   • Test Statistic = {stat_val:.4f}")
+                    print(f"   • P-value = {p_val:.5e} ({stars})")
+                    if p_rep is not None:
+                        print(f"4. Replicate-level t-test (N={len(meds1)} vs {len(meds2)} medians): p = {p_rep:.4f}")
+                    print()
+
+            ax.set_ylim(top=current_bracket_y + 0.05 * y_span)
+            if print_stat_report:
+                print("=" * 78 + "\n")
+    elif show_stat_test and sp_stats is None:
         if print_stat_report:
-            print("[STATISTICS WARNING] scipy is not installed in this Python environment!")
-            print("To enable automatic statistical tests (Student's t-test, Welch, Mann-Whitney U, Shapiro-Wilk):")
-            print("Run in terminal / command prompt:  pip install scipy\n")
+            print("[STATISTICS WARNING] scipy is not installed in this Python environment!\n")
 
     # Legend placed OUTSIDE the plot area (top right outside) so it never covers points or brackets
     handles = []

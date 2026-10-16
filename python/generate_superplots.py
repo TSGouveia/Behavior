@@ -1,12 +1,13 @@
 """
 SuperPlots generator for Larva Locomotion Analysis.
-Supports comparing 2 genotypes, or N genotypes (3, 4, etc.) dynamically.
+Supports dynamic comparisons, control selection, and automated statistical testing.
 
 SuperPlot principles (Lord et al., 2020):
 - Individual points = individual larvae (color-coded by biological replicate / cohort, e.g., N1, N2, N3)
 - Large markers = median of each biological replicate
-- Summary line / error bars = Mean +/- SEM (or SD) across biological replicates
-- Statistical tests performed at the biological replicate level (or across larvae)
+- Summary line / error bars = Mean +/- SEM across biological replicates
+- Statistical tests performed with normality test (Shapiro-Wilk) and variance test (Levene),
+  applying Student's t-test, Welch's t-test, or Mann-Whitney U with significance brackets!
 """
 
 import os
@@ -15,20 +16,25 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
-from scipy import stats
 
 # Add script directory to sys.path
 sys.path.append(str(Path(__file__).parent))
 from larva_analysis import batch_summarize, plot_superplot
 
 
+# =============================================================================
+# USER CONFIGURATION: DEFINE CONTROL AND GENOTYPES HERE
+# =============================================================================
+# Set the control genotype name (e.g. 'nSybxw1118_29C' or 'w1118').
+# Every other genotype will be compared against this control with significance bars!
+CONTROL_GENOTYPE = "nSybxw1118_29C"
+
+
 def get_or_create_summary(csv_root, cache_file=None):
     """Load or compute summary statistics for all larva tracking CSVs."""
     if cache_file and Path(cache_file).exists():
         cached_df = pd.read_csv(cache_file)
-        # Check if cache is up-to-date
-        if "w1118" in cached_df.get("genotype", []).values:
+        if "genotype" in cached_df.columns and len(cached_df) > 0:
             print(f"Loading cached summary from: {cache_file}")
             return cached_df
 
@@ -39,13 +45,16 @@ def get_or_create_summary(csv_root, cache_file=None):
     print(f"Analyzing {len(csv_files)} CSV files...")
     df = batch_summarize(csv_files)
     if cache_file:
-        df.to_csv(cache_file)
+        df.to_csv(cache_file, index=False)
         print(f"Saved cache to: {cache_file}")
     return df
 
 
-def run_all_analyses():
-    """Main routine to analyze dataset and produce all requested SuperPlots."""
+def run_all_analyses(control_genotype=CONTROL_GENOTYPE):
+    """
+    Main routine to analyze dataset and produce all requested SuperPlots
+    with statistical comparison brackets against the designated control.
+    """
     base_dir = Path(__file__).resolve().parent.parent
     csv_dir = base_dir / "data" / "csvs"
     results_dir = base_dir / "data" / "results"
@@ -54,176 +63,129 @@ def run_all_analyses():
     cache_file = results_dir / "larva_batch_summary.csv"
     df = get_or_create_summary(csv_dir, cache_file=cache_file)
 
-    # Make sure cohort is formatted cleanly (e.g. N1, N2, N3)
+    # Clean cohort naming
     df["cohort"] = df["cohort"].astype(str).str.upper()
 
-    print("\nDataset overview:")
-    print(df.groupby(["genotype", "cohort"])[["total_distance_mm", "mean_speed_mm_s"]].agg(["count", "median"]))
+    # Discover available genotypes
+    available_genotypes = sorted(df["genotype"].dropna().unique().tolist())
+    print("\n" + "=" * 60)
+    print("Discovered Genotypes in dataset:", available_genotypes)
+    print(f"Selected Control Genotype: '{control_genotype}'")
+    print("=" * 60)
 
-    # Pairwise comparison definitions
-    # Comparison 1: w1118 vs RalG0501
-    comp1 = ["w1118", "RalG0501"]
-    comp1_labels = ["w1118", "RalG0501"]
+    # Check if control exists or match case-insensitively
+    actual_control = None
+    for g in available_genotypes:
+        if g.lower() == control_genotype.lower():
+            actual_control = g
+            break
+        if "w1118" in g.lower() and "w1118" in control_genotype.lower():
+            actual_control = g
+            break
 
-    # Comparison 2: nSybxw1118 vs nSybxRalRNAi
-    comp2 = ["nSybxw1118", "nSybxRalRNAi"]
-    comp2_labels = ["nSyb > w1118", "nSyb > RalRNAi"]
+    if actual_control is None and available_genotypes:
+        actual_control = available_genotypes[0]
+        print(f"[Warning] Control '{control_genotype}' not found exactly. Using '{actual_control}' as fallback.")
+    else:
+        print(f"Using control genotype: {actual_control}")
 
-    # All 4 genotypes (demonstrating multi-genotype scalability)
-    all_genotypes = ["w1118", "RalG0501", "nSybxw1118", "nSybxRalRNAi"]
-    all_labels = ["w1118", "RalG0501", "nSyb > w1118", "nSyb > RalRNAi"]
+    # Reorder genotypes so that Control is placed FIRST on the left
+    other_genotypes = [g for g in available_genotypes if g != actual_control]
+    ordered_genotypes = [actual_control] + other_genotypes
 
-    # Consistent palette for replicates across all graphs
+    # Consistent replicate palette
     palette = {
-        "N1": "#2563EB",  # Vibrant Blue
-        "N2": "#D97706",  # Warm Amber / Orange
+        "N1": "#2563EB",  # Blue
+        "N2": "#D97706",  # Amber / Orange
         "N3": "#059669"   # Emerald Green
     }
 
     # =========================================================================
-    # 1. INDIVIDUAL SUPERPLOTS (2 BY 2 COMPARISONS)
+    # 1. GLOBAL SUPERPLOTS (ALL GENOTYPES WITH STATISTICAL BRACKETS VS CONTROL)
     # =========================================================================
-
-    # --- Comparison 1: Total Distance ---
+    print("\n--- Generating Global SuperPlot: Total Distance ---")
     plot_superplot(
         df,
-        genotypes=comp1,
-        genotype_labels=comp1_labels,
+        genotypes=ordered_genotypes,
+        control_genotype=actual_control,
         metric="total_distance_mm",
         ylabel="Total Distance (mm)",
-        title="Total Distance: w1118 vs RalG0501",
+        title=f"Total Distance (Control: {actual_control})",
         palette=palette,
-        save_path=results_dir / "superplot_w1118_vs_ralg0501_distance.png"
-    )
-
-    # --- Comparison 1: Average Speed ---
-    plot_superplot(
-        df,
-        genotypes=comp1,
-        genotype_labels=comp1_labels,
-        metric="mean_speed_mm_s",
-        ylabel="Average Speed (mm/s)",
-        title="Average Speed: w1118 vs RalG0501",
-        palette=palette,
-        save_path=results_dir / "superplot_w1118_vs_ralg0501_speed.png"
-    )
-
-    # --- Comparison 2: Total Distance ---
-    plot_superplot(
-        df,
-        genotypes=comp2,
-        genotype_labels=comp2_labels,
-        metric="total_distance_mm",
-        ylabel="Total Distance (mm)",
-        title="Total Distance: nSyb > w1118 vs nSyb > RalRNAi",
-        palette=palette,
-        save_path=results_dir / "superplot_nsybxw1118_vs_nsybxralrnai_distance.png"
-    )
-
-    # --- Comparison 2: Average Speed ---
-    plot_superplot(
-        df,
-        genotypes=comp2,
-        genotype_labels=comp2_labels,
-        metric="mean_speed_mm_s",
-        ylabel="Average Speed (mm/s)",
-        title="Average Speed: nSyb > w1118 vs nSyb > RalRNAi",
-        palette=palette,
-        save_path=results_dir / "superplot_nsybxw1118_vs_nsybxralrnai_speed.png"
-    )
-
-    # =========================================================================
-    # 2. COMBINED 2-PANEL FIGURES (Side-by-side comparisons for paper/presentation)
-    # =========================================================================
-
-    # Total Distance combined
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 5.8), dpi=300, sharey=False)
-    plot_superplot(
-        df, genotypes=comp1, genotype_labels=comp1_labels,
-        metric="total_distance_mm", ylabel="Total Distance (mm)",
-        title="w1118 vs RalG0501", ax=ax1, palette=palette,
-        show_legend=False, print_stat_report=False
-    )
-    plot_superplot(
-        df, genotypes=comp2, genotype_labels=comp2_labels,
-        metric="total_distance_mm", ylabel="Total Distance (mm)",
-        title="nSyb > w1118 vs nSyb > RalRNAi", ax=ax2, palette=palette,
-        show_legend=True, print_stat_report=False
-    )
-    fig.suptitle("SuperPlots: Total Distance (mm)", fontsize=15, fontweight="bold", y=1.02)
-    plt.tight_layout()
-    dist_comb_path = results_dir / "superplot_distance_comparisons.png"
-    fig.savefig(dist_comb_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved combined distance plot: {dist_comb_path}")
-
-    # Average Speed combined
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11.5, 5.8), dpi=300, sharey=False)
-    plot_superplot(
-        df, genotypes=comp1, genotype_labels=comp1_labels,
-        metric="mean_speed_mm_s", ylabel="Average Speed (mm/s)",
-        title="w1118 vs RalG0501", ax=ax1, palette=palette,
-        show_legend=False, print_stat_report=False
-    )
-    plot_superplot(
-        df, genotypes=comp2, genotype_labels=comp2_labels,
-        metric="mean_speed_mm_s", ylabel="Average Speed (mm/s)",
-        title="nSyb > w1118 vs nSyb > RalRNAi", ax=ax2, palette=palette,
-        show_legend=True, print_stat_report=False
-    )
-    fig.suptitle("SuperPlots: Average Speed (mm/s)", fontsize=15, fontweight="bold", y=1.02)
-    plt.tight_layout()
-    speed_comb_path = results_dir / "superplot_speed_comparisons.png"
-    fig.savefig(speed_comb_path, dpi=300, bbox_inches="tight")
-    plt.close(fig)
-    print(f"Saved combined speed plot: {speed_comb_path}")
-
-    # =========================================================================
-    # 3. MULTI-GENOTYPE SUPERPLOTS (All 4 genotypes on single axis)
-    # Scalable to any N genotypes!
-    # =========================================================================
-    plot_superplot(
-        df,
-        genotypes=all_genotypes,
-        genotype_labels=all_labels,
-        metric="total_distance_mm",
-        ylabel="Total Distance (mm)",
-        title="Total Distance across Genotypes",
-        palette=palette,
-        show_stat_test=False,
+        show_stat_test=True,
+        print_stat_report=True,
         save_path=results_dir / "superplot_all_genotypes_distance.png"
     )
 
+    print("\n--- Generating Global SuperPlot: Average Speed ---")
     plot_superplot(
         df,
-        genotypes=all_genotypes,
-        genotype_labels=all_labels,
+        genotypes=ordered_genotypes,
+        control_genotype=actual_control,
         metric="mean_speed_mm_s",
         ylabel="Average Speed (mm/s)",
-        title="Average Speed across Genotypes",
+        title=f"Average Speed (Control: {actual_control})",
         palette=palette,
-        show_stat_test=False,
+        show_stat_test=True,
+        print_stat_report=True,
         save_path=results_dir / "superplot_all_genotypes_speed.png"
     )
 
     # =========================================================================
-    # 4. EXPORT STATISTICAL REPORT TO EXCEL AND CSV
+    # 2. INDIVIDUAL PAIRWISE SUPERPLOTS (CONTROL VS EACH GENOTYPE ONE-BY-ONE)
+    # =========================================================================
+    print("\n--- Generating Pairwise 1-on-1 SuperPlots against Control ---")
+    for g in other_genotypes:
+        pair = [actual_control, g]
+        clean_name = f"{actual_control}_vs_{g}".replace(" ", "_")
+
+        # Total distance
+        plot_superplot(
+            df,
+            genotypes=pair,
+            control_genotype=actual_control,
+            metric="total_distance_mm",
+            ylabel="Total Distance (mm)",
+            title=f"Total Distance: {actual_control} vs {g}",
+            palette=palette,
+            show_stat_test=True,
+            print_stat_report=False,
+            save_path=results_dir / f"superplot_{clean_name}_distance.png"
+        )
+
+        # Average speed
+        plot_superplot(
+            df,
+            genotypes=pair,
+            control_genotype=actual_control,
+            metric="mean_speed_mm_s",
+            ylabel="Average Speed (mm/s)",
+            title=f"Average Speed: {actual_control} vs {g}",
+            palette=palette,
+            show_stat_test=True,
+            print_stat_report=False,
+            save_path=results_dir / f"superplot_{clean_name}_speed.png"
+        )
+
+    # =========================================================================
+    # 3. EXPORT STATISTICAL SUMMARY TABLE
     # =========================================================================
     stats_rows = []
-    for g in all_genotypes:
+    for g in ordered_genotypes:
         gdf = df[df["genotype"] == g]
         for c in sorted(gdf["cohort"].unique()):
             cdf = gdf[gdf["cohort"] == c]
             stats_rows.append({
                 "Genotype": g,
+                "Is_Control": (g == actual_control),
                 "Replicate": c,
                 "N_Larvae": len(cdf),
-                "Distance_Median_mm": cdf["total_distance_mm"].median(),
-                "Distance_Mean_mm": cdf["total_distance_mm"].mean(),
-                "Distance_SEM_mm": cdf["total_distance_mm"].sem(),
-                "Speed_Median_mm_s": cdf["mean_speed_mm_s"].median(),
-                "Speed_Mean_mm_s": cdf["mean_speed_mm_s"].mean(),
-                "Speed_SEM_mm_s": cdf["mean_speed_mm_s"].sem(),
+                "Distance_Median_mm": round(float(cdf["total_distance_mm"].median()), 3),
+                "Distance_Mean_mm": round(float(cdf["total_distance_mm"].mean()), 3),
+                "Distance_SEM_mm": round(float(cdf["total_distance_mm"].sem()), 3),
+                "Speed_Median_mm_s": round(float(cdf["mean_speed_mm_s"].median()), 3),
+                "Speed_Mean_mm_s": round(float(cdf["mean_speed_mm_s"].mean()), 3),
+                "Speed_SEM_mm_s": round(float(cdf["mean_speed_mm_s"].sem()), 3),
             })
     stats_df = pd.DataFrame(stats_rows)
     stats_df.to_csv(results_dir / "superplot_replicate_summary.csv", index=False)
@@ -232,7 +194,7 @@ def run_all_analyses():
     except Exception:
         pass
 
-    print("\nAll SuperPlots and summary tables successfully generated in:", results_dir)
+    print(f"\nAll plots and summary tables saved to: {results_dir}\n")
 
 
 if __name__ == "__main__":

@@ -658,9 +658,15 @@ def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, cl
         ax.set_ylim(np.nanmin(y) - 2, np.nanmax(y) + 2)
 
     ax.set_aspect("equal")
-    ax.set_xlabel("X (mm)", fontsize=12)
-    ax.set_ylabel("Y (mm)", fontsize=12)
-    ax.set_title(title or df.attrs.get("metadata", {}).get("stem", "Larva trajectory"), fontsize=14, weight="bold")
+    ax.set_xlabel("X (mm)", fontsize=12, fontweight="semibold", color="black")
+    ax.set_ylabel("Y (mm)", fontsize=12, fontweight="semibold", color="black")
+    ax.set_title(title or df.attrs.get("metadata", {}).get("stem", "Larva trajectory"), fontsize=14, weight="bold", color="black")
+    ax.tick_params(colors="black", labelsize=10)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("black")
+        spine.set_linewidth(1.0)
+    cbar.ax.tick_params(colors="black")
+    cbar.set_label("Time (s)", color="black", fontweight="semibold")
     ax.invert_yaxis()  # image coordinates: Y increases downward
 
     if save_path:
@@ -669,7 +675,7 @@ def plot_trajectory(df, title=None, dish_center_mm=None, dish_radius_mm=None, cl
 
 
 def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Clean",
-                             palette_name="purple_orange", arena_radius_mm=None,
+                             palette_name="purple_orange", colors=None, arena_radius_mm=None,
                              trajectory_alpha=0.8, start_alpha=0.9, end_alpha=0.6,
                              start_marker_size=10, end_marker_size=8,
                              arena_color="black", arena_linewidth=2.5,
@@ -683,16 +689,20 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
 
     df_list: list of cleaned kinematics DataFrames (output of load_and_clean).
     labels: list of larva names (e.g. ['Hid_1', 'Hid_2', ...] or extracted from metadata).
-    palette_name: 'viridis', 'inferno', or any Matplotlib colormap name.
+    palette_name: 'viridis', 'inferno', or any Matplotlib colormap name. Ignored if `colors` is provided.
+    colors: optional explicit list of colors corresponding to each DataFrame in df_list.
     """
     n_larvae = len(df_list)
     if n_larvae == 0:
         print("No DataFrames provided to plot_multi_larva_overlay.")
         return None, None
 
-    # Colors from colormap: smooth linear progression across colormap (sem intercalar)
-    cmap = plt.get_cmap(palette_name)
-    colors = [cmap(val) for val in np.linspace(0.08, 0.92, n_larvae)] if n_larvae > 1 else [cmap(0.5)]
+    # Colors: use explicit colors if provided, else sample from colormap
+    if colors is not None and len(colors) >= n_larvae:
+        plot_colors = list(colors[:n_larvae])
+    else:
+        cmap = plt.get_cmap(palette_name)
+        plot_colors = [cmap(val) for val in np.linspace(0.08, 0.92, n_larvae)] if n_larvae > 1 else [cmap(0.5)]
 
     fig, ax = plt.subplots(figsize=(8, 8))
     any_plotted = False
@@ -700,7 +710,7 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
 
     for i, df in enumerate(df_list):
         label = labels[i] if labels and i < len(labels) else df.attrs.get("metadata", {}).get("stem", f"Larva_{i+1}")
-        color = colors[i]
+        color = plot_colors[i]
         is_flagged = bool(flagged[i]) if flagged is not None and i < len(flagged) else False
 
         # Extract centered coordinates
@@ -778,19 +788,29 @@ def plot_multi_larva_overlay(df_list, labels=None, title="Larva Trajectories Cle
     else:
         ax.autoscale()
 
-    ax.set_title(title, fontsize=16, weight="bold")
-    ax.set_xlabel("X position (mm)", fontsize=12)
-    ax.set_ylabel("Y position (mm)", fontsize=12)
+    ax.set_title(title, fontsize=16, weight="bold", color="black")
+    ax.set_xlabel("X position (mm)", fontsize=12, fontweight="semibold", color="black")
+    ax.set_ylabel("Y position (mm)", fontsize=12, fontweight="semibold", color="black")
     ax.set_aspect("equal")
-    ax.grid(True, alpha=0.3)
+    ax.tick_params(colors="black", labelsize=10)
+    for spine in ax.spines.values():
+        spine.set_edgecolor("black")
+        spine.set_linewidth(1.0)
+    ax.grid(True, alpha=0.3, color="gray")
     
     # If there are multiple larvae, place the legend neatly on the side so it doesn't cover trajectories
     if n_larvae > 10:
-        ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left", frameon=True, fontsize=9, ncol=2)
+        leg = ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left", frameon=True, fontsize=9, ncol=2)
     elif n_larvae > 4:
-        ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left", frameon=True, fontsize=10)
+        leg = ax.legend(bbox_to_anchor=(1.04, 1), loc="upper left", frameon=True, fontsize=10)
     else:
-        ax.legend(loc="upper right", frameon=True, fontsize=10)
+        leg = ax.legend(loc="upper right", frameon=True, fontsize=10)
+    
+    if leg is not None:
+        leg.get_frame().set_edgecolor("black")
+        leg.get_frame().set_linewidth(1.0)
+        for text in leg.get_texts():
+            text.set_color("black")
         
     plt.tight_layout()
 

@@ -1106,10 +1106,12 @@ def plot_superplot(
     if ax is None:
         created_fig = True
         n_geno = len(genotypes)
-        fig_w = max(5.8, 2.6 * n_geno)
-        fig_h = 5.8
         if figsize is not None:
             fig_w, fig_h = figsize
+        else:
+            # Proporção mais espalmada / horizontal (widescreen / landscape)
+            fig_w = max(5.5, 1.35 * n_geno)
+            fig_h = max(3.8, min(4.8, 3.2 + 0.18 * n_geno))
         fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=300)
 
     ax.spines["top"].set_visible(False)

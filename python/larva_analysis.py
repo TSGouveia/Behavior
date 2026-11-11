@@ -1016,9 +1016,9 @@ def plot_superplot(
     stat_method="auto",
     show_legend=True,
     jitter_amount=0.18,
-    individual_size=40,
-    replicate_median_size=180,
-    alpha_individual=0.55,
+    individual_size=55,
+    replicate_median_size=95,
+    alpha_individual=0.75,
     print_stat_report=True,
     figsize=None,
     save_path=None,
@@ -1096,11 +1096,30 @@ def plot_superplot(
 
     all_reps = sorted(sub_df[replicate_col].dropna().astype(str).unique())
 
-    # Distinct palette: Purple, Orange, Green (Purple & Orange if 2 items)
-    # Accessible, publication-grade hex codes
-    default_colors = ["#8B5CF6", "#F97316", "#10B981", "#6366F1", "#EC4899", "#14B8A6"]
-    if palette is None:
-        palette = {rep: default_colors[i % len(default_colors)] for i, rep in enumerate(all_reps)}
+    # Colour scheme matches the trajectory plots:
+    #   Control genotype(s)      -> cool shades (green_blue colormap)
+    #   Experimental genotype(s) -> warm shades (purple_orange colormap)
+    # Each biological replicate gets its own shade within the group's colormap.
+    def _is_ctrl(g):
+        gl = str(g).lower()
+        if control_genotype is not None and g == control_genotype:
+            return True
+        return ("w1118" in gl) or ("ctrl" in gl) or ("control" in gl) or gl == "wt"
+
+    ctrl_set = {g for g in genotypes if _is_ctrl(g)}
+    if not ctrl_set and genotypes:
+        ctrl_set = {genotypes[0]}  # comparisons are ordered control-first
+
+    n_all = len(all_reps)
+    cool_pos = np.linspace(0.05, 0.95, n_all) if n_all > 1 else [0.45]
+    warm_pos = np.linspace(0.05, 0.82, n_all) if n_all > 1 else [0.45]
+    cool_palette = {rep: GREEN_BLUE_CMAP(cool_pos[i]) for i, rep in enumerate(all_reps)}
+    warm_palette = {rep: PURPLE_ORANGE_CMAP(warm_pos[i]) for i, rep in enumerate(all_reps)}
+
+    def _rep_color(geno, rep):
+        if palette is not None:
+            return palette.get(rep, "#6B7280")
+        return (cool_palette if geno in ctrl_set else warm_palette).get(rep, "#6B7280")
 
     created_fig = False
     if ax is None:
@@ -1136,7 +1155,7 @@ def plot_superplot(
             if len(vals) == 0:
                 continue
 
-            color = palette.get(rep, "#6B7280")
+            color = _rep_color(geno, rep)
 
             if n_reps > 1:
                 rep_center_offset = (r_i - (n_reps - 1) / 2.0) * (jitter_amount * 0.8)
@@ -1152,7 +1171,8 @@ def plot_superplot(
                 color=color,
                 alpha=alpha_individual,
                 s=individual_size,
-                edgecolors="none",
+                edgecolors="white",
+                linewidths=0.5,
                 zorder=2,
             )
 
@@ -1164,7 +1184,7 @@ def plot_superplot(
                 rep_median,
                 color=color,
                 edgecolor="black",
-                linewidth=1.8,
+                linewidth=1.3,
                 s=replicate_median_size,
                 zorder=4,
             )
@@ -1436,23 +1456,31 @@ def plot_superplot(
             print("[STATISTICS WARNING] scipy is not installed in this Python environment!\n")
 
     # Legend placed OUTSIDE the plot area (top right outside) so it never covers points or brackets
+    from matplotlib.legend_handler import HandlerTuple
+
     handles = []
     labels = []
+    has_ctrl = any(g in ctrl_set for g in genotypes)
+    has_exp = any(g not in ctrl_set for g in genotypes)
+
+    def _rep_marker(c):
+        return plt.Line2D([0], [0], marker="o", color="w", markerfacecolor=c,
+                          markersize=8, markeredgecolor="black", markeredgewidth=1.0)
+
     for rep in all_reps:
-        h_rep = plt.Line2D(
-            [0],
-            [0],
-            marker="o",
-            color="w",
-            markerfacecolor=palette.get(rep, "#6B7280"),
-            markersize=9,
-            markeredgecolor="black",
-            markeredgewidth=1.2,
-        )
+        if palette is not None:
+            h_rep = _rep_marker(palette.get(rep, "#6B7280"))
+        else:
+            parts = []
+            if has_ctrl:
+                parts.append(_rep_marker(cool_palette[rep]))
+            if has_exp:
+                parts.append(_rep_marker(warm_palette[rep]))
+            h_rep = tuple(parts) if len(parts) > 1 else parts[0]
         handles.append(h_rep)
         labels.append(f"Replicate {rep}")
 
-    h_larva = plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#9CA3AF", markersize=6)
+    h_larva = plt.Line2D([0], [0], marker="o", color="w", markerfacecolor="#9CA3AF", markersize=7)
     h_med = plt.Line2D(
         [0],
         [0],
@@ -1460,8 +1488,8 @@ def plot_superplot(
         color="w",
         markerfacecolor="#9CA3AF",
         markeredgecolor="black",
-        markeredgewidth=1.8,
-        markersize=11,
+        markeredgewidth=1.3,
+        markersize=8,
     )
     h_grand = plt.Line2D([0], [0], color="black", linewidth=2.5)
 
@@ -1478,6 +1506,7 @@ def plot_superplot(
             framealpha=0.9,
             edgecolor="#D1D5DB",
             fontsize=8.5,
+            handler_map={tuple: HandlerTuple(ndivide=None, pad=0.3)},
         )
 
     if created_fig:

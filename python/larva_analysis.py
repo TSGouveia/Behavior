@@ -1114,7 +1114,13 @@ def plot_superplot(
     cool_pos = np.linspace(0.05, 0.95, n_all) if n_all > 1 else [0.45]
     warm_pos = np.linspace(0.05, 0.82, n_all) if n_all > 1 else [0.45]
     cool_palette = {rep: GREEN_BLUE_CMAP(cool_pos[i]) for i, rep in enumerate(all_reps)}
-    warm_palette = {rep: PURPLE_ORANGE_CMAP(warm_pos[i]) for i, rep in enumerate(all_reps)}
+    # Experimental replicates: fixed, clearly distinct warm colours (orange, purple, magenta);
+    # falls back to the purple_orange colormap if there are more than 3 replicates.
+    warm_fixed = ["#F97316", "#7C3AED", "#D946EF"]
+    if n_all <= len(warm_fixed):
+        warm_palette = {rep: warm_fixed[i] for i, rep in enumerate(all_reps)}
+    else:
+        warm_palette = {rep: PURPLE_ORANGE_CMAP(warm_pos[i]) for i, rep in enumerate(all_reps)}
 
     def _rep_color(geno, rep):
         if palette is not None:
